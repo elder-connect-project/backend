@@ -1,33 +1,124 @@
-const express = require('express');
-const jwt = require('jsonwebtoken');
-const { body, validationResult } = require('express-validator');
-const User = require('../models/User');
+const express = require("express");
+const jwt = require("jsonwebtoken");
+const { body, validationResult } = require("express-validator");
+const User = require("../models/User");
 
 const router = express.Router();
 
-const signAccessToken = (id) => jwt.sign({ sub: id }, process.env.JWT_SECRET || 'dev_secret', { expiresIn: '7d' });
-const signRefreshToken = (id) => jwt.sign({ sub: id, type: 'refresh' }, process.env.JWT_REFRESH_SECRET || 'dev_refresh', { expiresIn: '30d' });
+const signAccessToken = (id) =>
+  jwt.sign({ sub: id }, process.env.JWT_SECRET || "dev_secret", {
+    expiresIn: "7d",
+  });
+const signRefreshToken = (id) =>
+  jwt.sign(
+    { sub: id, type: "refresh" },
+    process.env.JWT_REFRESH_SECRET || "dev_refresh",
+    { expiresIn: "30d" }
+  );
 
-router.post('/send-otp', [body('phoneNumber').notEmpty()], async (req, res) => {
+/**
+ * @swagger
+ * /api/auth/send-otp:
+ *   post:
+ *     summary: Send OTP to user
+ *     tags:
+ *       - Auth
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - phoneNumber
+ *             properties:
+ *               phoneNumber:
+ *                 type: string
+ *                 example: "+1234567890"
+ *     responses:
+ *       200:
+ *         description: OTP sent successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: string
+ *                 devOTP:
+ *                   type: string
+ */
+router.post("/send-otp", [body("phoneNumber").notEmpty()], async (req, res) => {
   const errors = validationResult(req);
-  if (!errors.isEmpty()) return res.status(400).json({ errors: errors.array() });
+  if (!errors.isEmpty())
+    return res.status(400).json({ errors: errors.array() });
   const { phoneNumber } = req.body;
   let user = await User.findOne({ phoneNumber });
-  if (!user) user = await User.create({ phoneNumber, firstName: 'User' });
-  const devOTP = '123456';
-  return res.json({ message: 'OTP sent', devOTP });
+  if (!user) user = await User.create({ phoneNumber, firstName: "User" });
+  const devOTP = "123456";
+  return res.json({ message: "OTP sent", devOTP });
 });
 
-router.post('/verify-otp', [body('phoneNumber').notEmpty(), body('otp').notEmpty()], async (req, res) => {
-  const errors = validationResult(req);
-  if (!errors.isEmpty()) return res.status(400).json({ errors: errors.array() });
-  const { phoneNumber, otp } = req.body;
-  if (otp !== '123456') return res.status(400).json({ message: 'Invalid OTP' });
-  const user = await User.findOneAndUpdate({ phoneNumber }, { isVerified: true }, { new: true });
-  const refreshToken = signRefreshToken(user._id);
-  await User.findByIdAndUpdate(user._id, { refreshToken });
-  const accessToken = signAccessToken(user._id);
-  return res.json({ accessToken, refreshToken, user });
-});
+/**
+ * @swagger
+ * /api/auth/verify-otp:
+ *   post:
+ *     summary: Verify OTP and login user
+ *     tags:
+ *       - Auth
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - phoneNumber
+ *               - otp
+ *             properties:
+ *               phoneNumber:
+ *                 type: string
+ *                 example: "+1234567890"
+ *               otp:
+ *                 type: string
+ *                 example: "123456"
+ *     responses:
+ *       200:
+ *         description: OTP verified, returns access and refresh tokens
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 accessToken:
+ *                   type: string
+ *                 refreshToken:
+ *                   type: string
+ *                 user:
+ *                   type: object
+ *       400:
+ *         description: Invalid OTP or validation error
+ */
+router.post(
+  "/verify-otp",
+  [body("phoneNumber").notEmpty(), body("otp").notEmpty()],
+  async (req, res) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty())
+      return res.status(400).json({ errors: errors.array() });
+    const { phoneNumber, otp } = req.body;
+    if (otp !== "123456")
+      return res.status(400).json({ message: "Invalid OTP" });
+    const user = await User.findOneAndUpdate(
+      { phoneNumber },
+      { isVerified: true },
+      { new: true }
+    );
+    const refreshToken = signRefreshToken(user._id);
+    await User.findByIdAndUpdate(user._id, { refreshToken });
+    const accessToken = signAccessToken(user._id);
+    return res.json({ accessToken, refreshToken, user });
+  }
+);
 
 module.exports = router;
