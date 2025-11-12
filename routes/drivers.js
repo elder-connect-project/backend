@@ -1,6 +1,7 @@
 const express = require("express");
 const { body, validationResult } = require("express-validator");
 const auth = require("../middleware/auth");
+const { requireRole } = require("../middleware/roleAuth");
 const User = require("../models/User");
 
 const router = express.Router();
@@ -78,18 +79,16 @@ router.get("/", auth, async (req, res) => {
 router.put(
   "/me",
   auth,
+  requireRole("driver"),
   [
     body("firstName").optional().isString(),
     body("age").optional().isInt({ min: 16, max: 120 }),
     body("licenseNumber").optional().isString(),
     body("profileImage").optional().isString(),
     body("licenseImage").optional().isString(),
+    body("isAvailable").optional().isBoolean(),
   ],
   async (req, res) => {
-    if (req.user.role !== "driver")
-      return res
-        .status(403)
-        .json({ message: "Only drivers can update this profile" });
     const errors = validationResult(req);
     if (!errors.isEmpty())
       return res.status(400).json({ errors: errors.array() });
@@ -100,6 +99,7 @@ router.put(
       licenseNumber: req.body.licenseNumber,
       profileImage: req.body.profileImage,
       licenseImage: req.body.licenseImage,
+      isAvailable: req.body.isAvailable,
     };
 
     const cleaned = Object.fromEntries(

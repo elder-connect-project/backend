@@ -38,3 +38,4 @@ function setupDocs(app) {
 }
 
 module.exports = setupDocs;
+

@@ -38,7 +38,7 @@ app.use('/api/', limiter);
 // CORS Configuration
 // =========================
 app.use(cors({
-  origin: process.env.CORS_ORIGIN || 'http://localhost:3000',
+  origin: process.env.CORS_ORIGIN || 'http://localhost:5000',
   credentials: true
 }));
 
@@ -70,6 +70,7 @@ mongoose.connect(process.env.MONGODB_URI || 'mongodb://localhost:27017/elderconn
 // Routes
 // =========================
 app.use('/api/auth', require('./routes/auth'));
+app.use('/api/otp', require('./routes/otp'));
 app.use('/api/users', require('./routes/users'));
 app.use('/api/family', require('./routes/family'));
 app.use('/api/drivers', require('./routes/drivers'));
@@ -101,7 +102,7 @@ const swaggerOptions = {
 
 const swaggerSpecs = swaggerJsDoc(swaggerOptions);
 
-// Swagger UI for interactive testing
+// Swagger UI for interactive testing (embed spec to avoid any external fetch)
 app.use('/swagger', swaggerUi.serve, swaggerUi.setup(swaggerSpecs));
 
 // Redoc for modern documentation view

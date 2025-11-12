@@ -1,6 +1,7 @@
 const express = require('express');
 const { body, validationResult } = require('express-validator');
 const auth = require('../middleware/auth');
+const { requireRoles } = require('../middleware/roleAuth');
 const EmergencyContact = require('../models/EmergencyContact');
 
 const router = express.Router();
@@ -36,9 +37,18 @@ const router = express.Router();
  *       400:
  *         description: elderId is required
  */
-router.get('/', auth, async (req, res) => {
+router.get('/', auth, requireRoles(['elder', 'family']), async (req, res) => {
   const { elderId } = req.query;
   if (!elderId) return res.status(400).json({ message: 'elderId is required' });
+  
+  // If user is elder, they can only see their own emergency contacts
+  if (req.user.role === 'elder' && elderId !== req.user._id.toString()) {
+    return res.status(403).json({ 
+      message: 'Forbidden',
+      error: 'Elders can only view their own emergency contacts'
+    });
+  }
+  
   const contacts = await EmergencyContact.find({ elderId }).sort({ priority: 1 }).lean();
   return res.json({ contacts });
 });
@@ -85,7 +95,7 @@ router.get('/', auth, async (req, res) => {
  *       400:
  *         description: Validation error
  */
-router.post('/', auth, [
+router.post('/', auth, requireRoles(['elder', 'family']), [
   body('elderId').notEmpty(),
   body('name').notEmpty(),
   body('phone').notEmpty(),
@@ -94,6 +104,15 @@ router.post('/', auth, [
 ], async (req, res) => {
   const errors = validationResult(req);
   if (!errors.isEmpty()) return res.status(400).json({ errors: errors.array() });
+  
+  // If user is elder, they can only add emergency contacts for themselves
+  if (req.user.role === 'elder' && req.body.elderId !== req.user._id.toString()) {
+    return res.status(403).json({ 
+      message: 'Forbidden',
+      error: 'Elders can only add emergency contacts for themselves'
+    });
+  }
+  
   const contact = await EmergencyContact.create(req.body);
   return res.status(201).json({ contact });
 });
@@ -139,10 +158,20 @@ router.post('/', auth, [
  *       404:
  *         description: Emergency contact not found
  */
-router.put('/:id', auth, async (req, res) => {
-  const contact = await EmergencyContact.findByIdAndUpdate(req.params.id, req.body, { new: true });
+router.put('/:id', auth, requireRoles(['elder', 'family']), async (req, res) => {
+  const contact = await EmergencyContact.findById(req.params.id);
   if (!contact) return res.status(404).json({ message: 'Emergency contact not found' });
-  return res.json({ contact });
+  
+  // If user is elder, they can only update their own emergency contacts
+  if (req.user.role === 'elder' && contact.elderId.toString() !== req.user._id.toString()) {
+    return res.status(403).json({ 
+      message: 'Forbidden',
+      error: 'Elders can only update their own emergency contacts'
+    });
+  }
+  
+  const updated = await EmergencyContact.findByIdAndUpdate(req.params.id, req.body, { new: true });
+  return res.json({ contact: updated });
 });
 
 /**
@@ -174,9 +203,19 @@ router.put('/:id', auth, async (req, res) => {
  *       404:
  *         description: Emergency contact not found
  */
-router.delete('/:id', auth, async (req, res) => {
-  const result = await EmergencyContact.findByIdAndDelete(req.params.id);
-  if (!result) return res.status(404).json({ message: 'Emergency contact not found' });
+router.delete('/:id', auth, requireRoles(['elder', 'family']), async (req, res) => {
+  const contact = await EmergencyContact.findById(req.params.id);
+  if (!contact) return res.status(404).json({ message: 'Emergency contact not found' });
+  
+  // If user is elder, they can only delete their own emergency contacts
+  if (req.user.role === 'elder' && contact.elderId.toString() !== req.user._id.toString()) {
+    return res.status(403).json({ 
+      message: 'Forbidden',
+      error: 'Elders can only delete their own emergency contacts'
+    });
+  }
+  
+  await EmergencyContact.findByIdAndDelete(req.params.id);
   return res.json({ message: 'Emergency contact deleted' });
 });
 

@@ -1,0 +1,9 @@
+services:
+  app:
+    build: .
+    image: elders/backend:latest
+    container_name: elders-app
+    ports:
+      - "3000:3000"
+    env_file:
+      - .env

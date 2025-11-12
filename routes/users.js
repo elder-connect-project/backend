@@ -28,7 +28,85 @@ const router = express.Router();
  *                   $ref: '#/components/schemas/User'
  */
 router.get('/me', auth, async (req, res) => {
-  return res.json({ user: req.user });
+  // Refresh user from database to get latest data
+  const user = await User.findById(req.user._id).lean();
+  return res.json({ user });
+});
+
+/**
+ * @swagger
+ * /api/users/me:
+ *   put:
+ *     summary: Update current user profile (including role)
+ *     tags:
+ *       - Users
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               firstName:
+ *                 type: string
+ *               lastName:
+ *                 type: string
+ *               role:
+ *                 type: string
+ *                 enum: [elder, family, driver]
+ *               age:
+ *                 type: number
+ *               address:
+ *                 type: string
+ *               profileImage:
+ *                 type: string
+ *               licenseNumber:
+ *                 type: string
+ *                 description: Required if role is driver
+ *               licenseImage:
+ *                 type: string
+ *                 description: Required if role is driver
+ *     responses:
+ *       200:
+ *         description: User profile updated
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 user:
+ *                   $ref: '#/components/schemas/User'
+ *       400:
+ *         description: Validation error
+ */
+router.put('/me', auth, async (req, res) => {
+  const { firstName, lastName, role, age, address, profileImage, licenseNumber, licenseImage } = req.body;
+  
+  const updates = {};
+  if (firstName !== undefined) updates.firstName = firstName;
+  if (lastName !== undefined) updates.lastName = lastName;
+  if (age !== undefined) updates.age = age;
+  if (address !== undefined) updates.address = address;
+  if (profileImage !== undefined) updates.profileImage = profileImage;
+  
+  // Role update validation
+  if (role !== undefined) {
+    if (!['elder', 'family', 'driver'].includes(role)) {
+      return res.status(400).json({ message: 'Invalid role. Must be elder, family, or driver' });
+    }
+    updates.role = role;
+    
+    // If changing to driver, validate license fields
+    if (role === 'driver') {
+      if (licenseNumber !== undefined) updates.licenseNumber = licenseNumber;
+      if (licenseImage !== undefined) updates.licenseImage = licenseImage;
+    }
+  }
+  
+  const user = await User.findByIdAndUpdate(req.user._id, updates, { new: true }).lean();
+  return res.json({ user });
 });
 
 /**
@@ -128,7 +206,29 @@ router.get('/:id', auth, async (req, res) => {
  *               $ref: '#/components/schemas/User'
  */
 router.put('/:id', auth, async (req, res) => {
-  const user = await User.findByIdAndUpdate(req.params.id, req.body, { new: true }).lean();
+  // Only allow users to update their own profile, or allow family/elder to update related profiles
+  const targetUserId = req.params.id;
+  const isOwnProfile = req.user._id.toString() === targetUserId;
+  
+  // Allow family members and elders to update related profiles (for now, allow own profile only)
+  // You can extend this logic based on your business rules
+  if (!isOwnProfile) {
+    // Check if user has permission (e.g., family member updating elder profile)
+    // For now, restrict to own profile only
+    return res.status(403).json({ 
+      message: 'Forbidden',
+      error: 'You can only update your own profile'
+    });
+  }
+  
+  const updates = req.body;
+  
+  // Validate role if being updated
+  if (updates.role && !['elder', 'family', 'driver'].includes(updates.role)) {
+    return res.status(400).json({ message: 'Invalid role' });
+  }
+  
+  const user = await User.findByIdAndUpdate(targetUserId, updates, { new: true }).lean();
   return res.json({ user });
 });
 
@@ -161,7 +261,17 @@ router.put('/:id', auth, async (req, res) => {
  *                   example: User deleted successfully
  */
 router.delete('/:id', auth, async (req, res) => {
-  await User.findByIdAndDelete(req.params.id);
+  const targetUserId = req.params.id;
+  
+  // Only allow users to delete their own account, or restrict to admin (if you add admin role later)
+  if (req.user._id.toString() !== targetUserId) {
+    return res.status(403).json({ 
+      message: 'Forbidden',
+      error: 'You can only delete your own account'
+    });
+  }
+  
+  await User.findByIdAndDelete(targetUserId);
   return res.json({ message: 'User deleted successfully' });
 });
 

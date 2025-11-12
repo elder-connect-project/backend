@@ -1,6 +1,7 @@
 const express = require('express');
 const { body, validationResult } = require('express-validator');
 const auth = require('../middleware/auth');
+const { requireRoles } = require('../middleware/roleAuth');
 const Schedule = require('../models/Schedule');
 
 const router = express.Router();
@@ -40,11 +41,28 @@ const router = express.Router();
  *                   items:
  *                     $ref: '#/components/schemas/Schedule'
  */
-router.get('/', auth, async (req, res) => {
+router.get('/', auth, requireRoles(['elder', 'family', 'driver']), async (req, res) => {
   const { elderId, familyId } = req.query;
   const filter = {};
-  if (elderId) filter.elderId = elderId;
-  if (familyId) filter.familyId = familyId;
+  
+  // Role-based filtering
+  if (req.user.role === 'elder') {
+    // Elders can only see their own schedules
+    filter.elderId = req.user._id.toString();
+  } else if (req.user.role === 'family') {
+    // Family members can see schedules for elders they're related to
+    if (elderId) {
+      filter.elderId = elderId;
+    } else {
+      // If no elderId specified, show schedules where this user is the family member
+      filter.familyId = req.user._id.toString();
+    }
+  } else if (req.user.role === 'driver') {
+    // Drivers can see all schedules (they need to see available rides)
+    if (elderId) filter.elderId = elderId;
+    if (familyId) filter.familyId = familyId;
+  }
+  
   const schedules = await Schedule.find(filter).limit(100).lean();
   return res.json({ schedules });
 });
@@ -99,7 +117,7 @@ router.get('/', auth, async (req, res) => {
  *       400:
  *         description: Validation error
  */
-router.post('/', auth, [
+router.post('/', auth, requireRoles(['elder', 'family']), [
   body('elderId').notEmpty(),
   body('familyId').notEmpty(),
   body('title').notEmpty(),
@@ -110,6 +128,21 @@ router.post('/', auth, [
 ], async (req, res) => {
   const errors = validationResult(req);
   if (!errors.isEmpty()) return res.status(400).json({ errors: errors.array() });
+  
+  // If user is elder, they can only create schedules for themselves
+  if (req.user.role === 'elder' && req.body.elderId !== req.user._id.toString()) {
+    return res.status(403).json({ 
+      message: 'Forbidden',
+      error: 'Elders can only create schedules for themselves'
+    });
+  }
+  
+  // If user is family member, they should be the familyId or have permission
+  if (req.user.role === 'family' && req.body.familyId !== req.user._id.toString()) {
+    // Allow if they're creating for an elder they're related to (you can add more validation here)
+    // For now, allow family members to create schedules
+  }
+  
   const schedule = await Schedule.create(req.body);
   return res.status(201).json({ schedule });
 });

@@ -1,0 +1,22 @@
+# Copy this to a new file named .env in the same folder and fill real values
+
+# Server
+PORT=5000
+NODE_ENV=development
+MONGODB_URI=mongodb://localhost:27017/elderconnect
+
+# Backend API key required by OTP endpoints
+API_KEY=change_me_backend_api_key
+
+# JWT
+JWT_SECRET=change_me_access
+JWT_REFRESH_SECRET=change_me_refresh
+
+# OTP settings
+OTP_TTL_MS=300000
+
+# SMS Provider config (REQUIRED)
+SMS_API_BASE_URL=https://smslenz.lk/api
+SMS_API_KEY=120ce26f-f707-4144-8a99-9db7f6228179
+SMS_USER_ID=868
+
