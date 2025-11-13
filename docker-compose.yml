@@ -1,7 +1,6 @@
 services:
   app:
     build: .
-    image: elders/backend:latest
     container_name: elders-app
     ports:
       - "5000:5000"
