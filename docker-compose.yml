@@ -18,5 +18,9 @@ services:
       - "traefik.http.services.elders-app.loadbalancer.server.port=5000"
 
     networks:
-      webproxy:
-        external: true
+      - webproxy
+
+
+networks:
+  webproxy:
+    external: true
