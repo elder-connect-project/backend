@@ -1,8 +1,22 @@
 services:
-  app:
+  elder-connect:
     build: .
     container_name: elders-app
     ports:
       - "5000:5000"
     env_file:
       - .env
+    labels:
+      - "traefik.enable=true"
+
+      # Router
+      - "traefik.http.routers.elders-app.rule=Host(`elders-api.tselven.com`)"
+      - "traefik.http.routers.elders-app.entrypoints=websecure"
+      - "traefik.http.routers.elders-app.tls.certresolver=myresolver"
+
+      # Service
+      - "traefik.http.services.elders-app.loadbalancer.server.port=5000"
+
+    networks:
+      webproxy:
+        external: true
