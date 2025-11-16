@@ -49,14 +49,38 @@ const signRefreshToken = (id) =>
  *                   type: string
  */
 router.post("/send-otp", [body("phoneNumber").notEmpty()], async (req, res) => {
-  const errors = validationResult(req);
-  if (!errors.isEmpty())
-    return res.status(400).json({ errors: errors.array() });
-  const { phoneNumber } = req.body;
-  let user = await User.findOne({ phoneNumber });
-  if (!user) user = await User.create({ phoneNumber, firstName: "User" });
-  const devOTP = "123456";
-  return res.json({ message: "OTP sent", devOTP });
+  try {
+    const errors = validationResult(req);
+    if (!errors.isEmpty())
+      return res.status(400).json({ errors: errors.array() });
+    
+    const { phoneNumber } = req.body;
+    
+    // Validate phone number format
+    if (!phoneNumber || !phoneNumber.startsWith('+')) {
+      return res.status(400).json({ 
+        message: 'Invalid phone number format. Must include country code (e.g., +94XXXXXXXXX)' 
+      });
+    }
+
+    // Create or find user
+    let user = await User.findOne({ phoneNumber });
+    if (!user) {
+      user = await User.create({ phoneNumber, firstName: "User" });
+    }
+
+    // Generate 4-digit OTP (matching frontend)
+    const devOTP = Math.floor(1000 + Math.random() * 9000).toString();
+    
+    return res.json({ 
+      message: "OTP sent successfully", 
+      devOTP,
+      success: true
+    });
+  } catch (error) {
+    console.error('[SEND OTP ERROR]', error);
+    return res.status(500).json({ message: 'Failed to send OTP', error: error.message });
+  }
 });
 
 /**
@@ -103,21 +127,59 @@ router.post(
   "/verify-otp",
   [body("phoneNumber").notEmpty(), body("otp").notEmpty()],
   async (req, res) => {
-    const errors = validationResult(req);
-    if (!errors.isEmpty())
-      return res.status(400).json({ errors: errors.array() });
-    const { phoneNumber, otp } = req.body;
-    if (otp !== "123456")
-      return res.status(400).json({ message: "Invalid OTP" });
-    const user = await User.findOneAndUpdate(
-      { phoneNumber },
-      { isVerified: true },
-      { new: true }
-    );
-    const refreshToken = signRefreshToken(user._id);
-    await User.findByIdAndUpdate(user._id, { refreshToken });
-    const accessToken = signAccessToken(user._id);
-    return res.json({ accessToken, refreshToken, user });
+    try {
+      const errors = validationResult(req);
+      if (!errors.isEmpty())
+        return res.status(400).json({ errors: errors.array() });
+      
+      const { phoneNumber, otp } = req.body;
+      
+      // Find user
+      let user = await User.findOne({ phoneNumber });
+      if (!user) {
+        return res.status(400).json({ message: "User not found. Please request OTP first." });
+      }
+
+      // For now, accept any 4-digit OTP (in production, verify against stored OTP)
+      if (!otp || otp.length !== 4 || !/^\d{4}$/.test(otp)) {
+        return res.status(400).json({ message: "Invalid OTP format. Must be 4 digits." });
+      }
+
+      // Update user as verified
+      user = await User.findOneAndUpdate(
+        { phoneNumber },
+        { isVerified: true },
+        { new: true }
+      );
+
+      // Generate tokens
+      const refreshToken = signRefreshToken(user._id);
+      await User.findByIdAndUpdate(user._id, { refreshToken });
+      const accessToken = signAccessToken(user._id);
+
+      // Return user with all fields
+      const userResponse = {
+        _id: user._id,
+        phoneNumber: user.phoneNumber,
+        firstName: user.firstName,
+        lastName: user.lastName,
+        role: user.role,
+        isVerified: user.isVerified,
+        isActive: user.isActive,
+        age: user.age,
+        address: user.address,
+        profileImage: user.profileImage,
+        licenseNumber: user.licenseNumber,
+        licenseImage: user.licenseImage,
+        createdAt: user.createdAt,
+        updatedAt: user.updatedAt
+      };
+
+      return res.json({ accessToken, refreshToken, user: userResponse });
+    } catch (error) {
+      console.error('[VERIFY OTP ERROR]', error);
+      return res.status(500).json({ message: 'Failed to verify OTP', error: error.message });
+    }
   }
 );
 

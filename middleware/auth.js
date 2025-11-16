@@ -10,6 +10,7 @@ module.exports = async function auth(req, res, next) {
     const user = await User.findById(payload.sub);
     if (!user) return res.status(401).json({ message: "Invalid token" });
     req.user = user;
+    req.userId = user._id; // Add userId for convenience
     next();
   } catch (e) {
     return res.status(401).json({ message: "Unauthorized" });

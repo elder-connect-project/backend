@@ -28,7 +28,34 @@ const router = express.Router();
  *                   $ref: '#/components/schemas/User'
  */
 router.get('/me', auth, async (req, res) => {
-  return res.json({ user: req.user });
+  try {
+    const user = await User.findById(req.userId);
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+    return res.json({ user });
+  } catch (error) {
+    console.error('[GET ME ERROR]', error);
+    return res.status(500).json({ message: 'Failed to get user', error: error.message });
+  }
+});
+
+router.put('/me', auth, async (req, res) => {
+  try {
+    const updateData = req.body;
+    const user = await User.findByIdAndUpdate(
+      req.userId,
+      updateData,
+      { new: true, runValidators: true }
+    );
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+    return res.json({ user });
+  } catch (error) {
+    console.error('[UPDATE ME ERROR]', error);
+    return res.status(500).json({ message: 'Failed to update user', error: error.message });
+  }
 });
 
 /**
