@@ -5,7 +5,10 @@
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
-    "dev": "nodemon server.js"
+    "dev": "nodemon server.js",
+    "tunnel": "node start-with-ngrok.js",
+    "tunnel:ngrok": "ngrok http 5000",
+    "tunnel:local": "lt --port 5000"
   },
   "dependencies": {
     "axios": "^1.7.7",

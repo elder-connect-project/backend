@@ -38,7 +38,26 @@ app.use('/api/', limiter);
 // CORS Configuration
 // =========================
 app.use(cors({
-  origin: process.env.CORS_ORIGIN || 'http://localhost:5000',
+  origin: function (origin, callback) {
+    // Allow requests with no origin (like mobile apps, Postman, etc.)
+    if (!origin) return callback(null, true);
+    
+    // In development, allow all origins for easier testing
+    if (process.env.NODE_ENV === 'development') {
+      return callback(null, true);
+    }
+    
+    // In production, check against allowed origins
+    const allowedOrigins = process.env.CORS_ORIGIN 
+      ? process.env.CORS_ORIGIN.split(',')
+      : ['http://localhost:5000'];
+    
+    if (allowedOrigins.indexOf(origin) !== -1) {
+      callback(null, true);
+    } else {
+      callback(new Error('Not allowed by CORS'));
+    }
+  },
   credentials: true
 }));
 
@@ -103,10 +122,20 @@ const swaggerSpecs = swaggerJsDoc(swaggerOptions);
 app.use('/swagger', swaggerUi.serve, swaggerUi.setup(swaggerSpecs));
 
 // Redoc for modern documentation view
-app.get('/docs', redoc({
-  title: 'ElderConnect API Docs',
-  specUrl: '/swagger.json'
-}));
+app.get('/docs', (req, res, next) => {
+  try {
+    return redoc({
+      title: 'ElderConnect API Docs',
+      specUrl: '/swagger.json',
+    })(req, res, next);
+  } catch (error) {
+    console.error('Redoc error:', error);
+    return res.status(500).json({
+      status: 'error',
+      message: 'Error loading API documentation'
+    });
+  }
+});
 
 // Raw OpenAPI JSON
 app.get('/swagger.json', (req, res) => res.json(swaggerSpecs));
@@ -137,11 +166,23 @@ app.use('*', (req, res) => {
 // Global Error Handler
 // =========================
 app.use((err, req, res, next) => {
-  console.error(err.stack);
-  res.status(err.status || 500).json({
+  // Safely handle errors
+  const status = err?.status || err?.statusCode || 500;
+  const message = err?.message || 'Something went wrong!';
+  const stack = err?.stack;
+
+  console.error('Error:', {
+    message,
+    status,
+    stack: process.env.NODE_ENV === 'development' ? stack : undefined,
+    url: req?.url,
+    method: req?.method
+  });
+
+  res.status(status).json({
     status: 'error',
-    message: process.env.NODE_ENV === 'production' ? 'Something went wrong!' : err.message,
-    ...(process.env.NODE_ENV === 'development' && { stack: err.stack })
+    message: process.env.NODE_ENV === 'production' ? 'Something went wrong!' : message,
+    ...(process.env.NODE_ENV === 'development' && stack && { stack })
   });
 });
 
@@ -149,9 +190,14 @@ app.use((err, req, res, next) => {
 // Start Server
 // =========================
 const PORT = process.env.PORT || 5000;
-app.listen(PORT, () => {
-  console.log(`🚀 ElderConnect API server running on port ${PORT}`);
+// Listen on all network interfaces (0.0.0.0) to allow access from other devices
+const HOST = process.env.HOST || '0.0.0.0';
+
+app.listen(PORT, HOST, () => {
+  console.log(`🚀 ElderConnect API server running on ${HOST}:${PORT}`);
   console.log(`📱 Environment: ${process.env.NODE_ENV || 'development'}`);
+  console.log(`🌐 Accessible at: http://localhost:${PORT} or http://172.185.139.58:${PORT}`);
+  console.log(`📋 API Base URL: http://172.185.139.58:${PORT}/api`);
 });
 
 module.exports = app;

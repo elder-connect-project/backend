@@ -30,6 +30,19 @@ const rideSchema = new mongoose.Schema(
       enum: ["pending", "accepted", "in_progress", "completed", "cancelled"],
       default: "pending",
     },
+    // Charge/Payment fields
+    distance: { type: Number }, // Distance in kilometers
+    charge: { type: Number }, // Charge amount in local currency
+    paymentStatus: {
+      type: String,
+      enum: ["pending", "paid", "refunded"],
+      default: "pending",
+    },
+    paymentMethod: {
+      type: String,
+      enum: ["cash", "card", "wallet", "online"],
+    },
+    completedAt: { type: Date }, // When ride was completed
   },
   { timestamps: true }
 );

@@ -159,6 +159,125 @@ router.post('/', auth, requireRoles(['elder', 'family']), [
   return res.status(201).json({ ride });
 });
 
+/**
+ * @swagger
+ * /api/rides/{id}:
+ *   patch:
+ *     summary: Update ride status and charge information
+ *     tags:
+ *       - Rides
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               status:
+ *                 type: string
+ *                 enum: [pending, accepted, in_progress, completed, cancelled]
+ *               distance:
+ *                 type: number
+ *               charge:
+ *                 type: number
+ *               paymentStatus:
+ *                 type: string
+ *                 enum: [pending, paid, refunded]
+ *               paymentMethod:
+ *                 type: string
+ *                 enum: [cash, card, wallet, online]
+ *     responses:
+ *       200:
+ *         description: Ride updated
+ */
+router.patch('/:id', auth, requireRoles(['elder', 'family', 'driver']), async (req, res) => {
+  const { status, distance, charge, paymentStatus, paymentMethod } = req.body;
+  const ride = await Ride.findById(req.params.id);
+  
+  if (!ride) {
+    return res.status(404).json({ message: 'Ride not found' });
+  }
+
+  // Role-based permissions
+  if (req.user.role === 'driver') {
+    // Drivers can update status, distance, and charge
+    if (status) ride.status = status;
+    if (distance !== undefined) ride.distance = distance;
+    if (charge !== undefined) ride.charge = charge;
+    
+    // Auto-set completedAt when status is completed
+    if (status === 'completed' && !ride.completedAt) {
+      ride.completedAt = new Date();
+    }
+  } else if (req.user.role === 'elder' || req.user.role === 'family') {
+    // Elders/Family can update payment status
+    if (paymentStatus) ride.paymentStatus = paymentStatus;
+    if (paymentMethod) ride.paymentMethod = paymentMethod;
+  }
+
+  await ride.save();
+  return res.json({ ride });
+});
+
+/**
+ * @swagger
+ * /api/rides/calculate-charge:
+ *   post:
+ *     summary: Calculate ride charge based on distance
+ *     tags:
+ *       - Rides
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - distance
+ *             properties:
+ *               distance:
+ *                 type: number
+ *                 description: Distance in kilometers
+ *     responses:
+ *       200:
+ *         description: Calculated charge
+ */
+router.post('/calculate-charge', auth, [
+  body('distance').isNumeric().withMessage('Distance must be a number')
+], async (req, res) => {
+  const errors = validationResult(req);
+  if (!errors.isEmpty()) return res.status(400).json({ errors: errors.array() });
+
+  const { distance } = req.body;
+  
+  // Charge calculation: Base fare + (distance * rate per km)
+  // You can adjust these values based on your pricing model
+  const BASE_FARE = 50; // Base fare in local currency
+  const RATE_PER_KM = 15; // Rate per kilometer
+  
+  const calculatedCharge = BASE_FARE + (distance * RATE_PER_KM);
+  
+  return res.json({ 
+    distance, 
+    charge: Math.round(calculatedCharge * 100) / 100, // Round to 2 decimal places
+    breakdown: {
+      baseFare: BASE_FARE,
+      distanceCharge: distance * RATE_PER_KM,
+      total: calculatedCharge
+    }
+  });
+});
+
 module.exports = router;
 
 /**

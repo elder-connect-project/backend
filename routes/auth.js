@@ -65,11 +65,9 @@ router.post("/send-otp", [body("phoneNumber").notEmpty()], async (req, res) => {
     });
   }
 
-  // Create or find user
-  let user = await User.findOne({ phoneNumber });
-  if (!user) {
-    user = await User.create({ phoneNumber, firstName: "User" });
-  }
+  // Do not auto-create user here. OTP request should only generate an OTP.
+  // User account creation will happen during OTP verification to ensure phone number ownership.
+  const existingUser = await User.findOne({ phoneNumber });
 
   // Generate OTP
   const code = Math.floor(100000 + Math.random() * 900000).toString();
@@ -85,16 +83,29 @@ router.post("/send-otp", [body("phoneNumber").notEmpty()], async (req, res) => {
   // Send OTP via SMS
   const message = `Your OTP code is ${code}. It expires in 5 minutes.`;
   
-  try {
-    await sendSms({ to: phoneNumber, message });
-    
-    // In development, return OTP for testing. In production, don't expose it.
-    const response = { message: "OTP sent successfully" };
-    if (process.env.NODE_ENV === 'development') {
-      response.devOTP = code;
-    }
-    
-    return res.json(response);
+    try {
+      await sendSms({ to: phoneNumber, message });
+
+      // In development, return OTP for testing. In production, don't expose it.
+      const response = { message: "OTP sent successfully" };
+      if (process.env.NODE_ENV === 'development') {
+        response.devOTP = code;
+      }
+
+      // If a user exists with this phone number, include a minimal user summary
+      if (existingUser) {
+        response.userExists = true;
+        response.user = {
+          _id: existingUser._id,
+          firstName: existingUser.firstName,
+          role: existingUser.role,
+          profileImage: existingUser.profileImage,
+        };
+      } else {
+        response.userExists = false;
+      }
+
+      return res.json(response);
   } catch (smsError) {
     console.error('[OTP SEND ERROR]', smsError.message);
     // Still return success to user (security: don't reveal if OTP exists)
@@ -191,10 +202,16 @@ router.post(
     // OTP is valid - delete it
     await Otp.deleteOne({ _id: otpRecord._id });
     
-    // Update or create user
+    // Update or create user - ensure we never create duplicate accounts for the same phone.
     let user = await User.findOne({ phoneNumber });
     if (!user) {
-      user = await User.create({ phoneNumber, isVerified: true, firstName: 'User' });
+      try {
+        user = await User.create({ phoneNumber, isVerified: true, firstName: 'User' });
+      } catch (e) {
+        // Handle rare race condition where another request created the user concurrently
+        user = await User.findOne({ phoneNumber });
+        if (!user) throw e;
+      }
     } else if (!user.isVerified) {
       user.isVerified = true;
       await user.save();
@@ -372,7 +389,7 @@ router.post(
  *       401:
  *         description: Token is invalid or expired
  */
-router.get("/verify", auth, async (req, res) => {
+router.post("/verify", auth, async (req, res) => {
   return res.json({
     valid: true,
     user: {
