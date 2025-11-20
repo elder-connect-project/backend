@@ -17,6 +17,12 @@ const scheduleSchema = new mongoose.Schema(
     time: { type: String, required: true },
     fromLocation: { type: String, required: true },
     toLocation: { type: String, required: true },
+    driverId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+    },
+    driverName: { type: String },
+    driverPhone: { type: String },
     status: {
       type: String,
       enum: ["pending", "confirmed", "completed", "cancelled"],

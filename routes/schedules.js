@@ -3,6 +3,7 @@ const { body, validationResult } = require('express-validator');
 const auth = require('../middleware/auth');
 const { requireRoles } = require('../middleware/roleAuth');
 const Schedule = require('../models/Schedule');
+const FamilyMember = require('../models/FamilyMember');
 
 const router = express.Router();
 
@@ -45,20 +46,43 @@ router.get('/', auth, requireRoles(['elder', 'family', 'driver']), async (req, r
   const { elderId, familyId } = req.query;
   const filter = {};
   
-  // Role-based filtering
   if (req.user.role === 'elder') {
-    // Elders can only see their own schedules
     filter.elderId = req.user._id.toString();
   } else if (req.user.role === 'family') {
-    // Family members can see schedules for elders they're related to
-    if (elderId) {
-      filter.elderId = elderId;
+    const orFilters = [];
+
+    if (familyId) {
+      orFilters.push({ familyId });
     } else {
-      // If no elderId specified, show schedules where this user is the family member
-      filter.familyId = req.user._id.toString();
+      orFilters.push({ familyId: req.user._id.toString() });
+    }
+
+    let linkedElderIds = [];
+    try {
+      const linkedMembers = await FamilyMember.find({
+        linkedUserId: req.user._id.toString(),
+      }).lean();
+      linkedElderIds = linkedMembers.map((member) =>
+        member.elderId?.toString()
+      ).filter(Boolean);
+    } catch (error) {
+      console.error('Error loading linked elders:', error);
+    }
+
+    if (elderId) {
+      linkedElderIds = [elderId];
+    }
+
+    if (linkedElderIds.length > 0) {
+      orFilters.push({ elderId: { $in: linkedElderIds } });
+    }
+
+    if (orFilters.length === 1) {
+      Object.assign(filter, orFilters[0]);
+    } else {
+      filter.$or = orFilters;
     }
   } else if (req.user.role === 'driver') {
-    // Drivers can see all schedules (they need to see available rides)
     if (elderId) filter.elderId = elderId;
     if (familyId) filter.familyId = familyId;
   }

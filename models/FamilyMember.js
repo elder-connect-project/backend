@@ -12,6 +12,10 @@ const familyMemberSchema = new mongoose.Schema(
     relation: { type: String, required: true },
     isPrimary: { type: Boolean, default: false },
     isEmergencyContact: { type: Boolean, default: false },
+    linkedUserId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+    },
     addedBy: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",

@@ -3,6 +3,7 @@ const { body, validationResult } = require('express-validator');
 const auth = require('../middleware/auth');
 const { requireRoles } = require('../middleware/roleAuth');
 const FamilyMember = require('../models/FamilyMember');
+const User = require('../models/User');
 
 const router = express.Router();
 
@@ -36,24 +37,42 @@ const router = express.Router();
  *                     $ref: '#/components/schemas/FamilyMember'
  */
 router.get('/', auth, requireRoles(['elder', 'family']), async (req, res) => {
-  const { elderId } = req.query;
+  const { elderId, linked } = req.query;
   const filter = {};
-  
-  // If user is elder, only show their own family members
-  // If user is family member, show family members they added or related to their elder
+
   if (req.user.role === 'elder') {
     filter.elderId = req.user._id.toString();
   } else if (req.user.role === 'family') {
-    // Family members can see members they added or filter by elderId if provided
-    if (elderId) {
+    if (linked === 'me') {
+      filter.linkedUserId = req.user._id.toString();
+    } else if (elderId) {
       filter.elderId = elderId;
     } else {
-      // Show family members added by this user
-      filter.addedBy = req.user._id.toString();
+      filter.$or = [
+        { addedBy: req.user._id.toString() },
+        { linkedUserId: req.user._id.toString() },
+      ];
     }
   }
-  
-  const members = await FamilyMember.find(filter).limit(100).lean();
+
+  // Keep linkedUserId up to date when phone matches current user
+  if (req.user.role === 'family' && req.user.phoneNumber) {
+    await FamilyMember.updateMany(
+      {
+        phone: req.user.phoneNumber,
+        $or: [
+          { linkedUserId: { $exists: false } },
+          { linkedUserId: null },
+        ],
+      },
+      { linkedUserId: req.user._id.toString() }
+    );
+  }
+
+  const members = await FamilyMember.find(filter)
+    .limit(100)
+    .populate('elderId', 'firstName lastName phoneNumber')
+    .lean();
   return res.json({ members });
 });
 
@@ -113,7 +132,19 @@ router.post('/', auth, requireRoles(['elder', 'family']), [
     });
   }
   
-  const member = await FamilyMember.create({ ...req.body, addedBy: req.user._id });
+  const normalizedPhone = req.body.phone.trim();
+  const member = await FamilyMember.create({
+    ...req.body,
+    phone: normalizedPhone,
+    addedBy: req.user._id,
+  });
+
+  const linkedUser = await User.findOne({ phoneNumber: normalizedPhone }).lean();
+  if (linkedUser) {
+    member.linkedUserId = linkedUser._id;
+    await member.save();
+  }
+
   return res.status(201).json({ member });
 });
 
@@ -145,3 +176,4 @@ module.exports = router;
  *           type: string
  *           format: date-time
  */
+
