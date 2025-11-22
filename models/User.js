@@ -8,7 +8,8 @@ const userSchema = new mongoose.Schema(
     role: {
       type: String,
       enum: ["elder", "family", "driver"],
-      default: "elder",
+      required: false, // Not required - user must select role during registration
+      // No default - will be undefined for new users until they select a role
     },
     isVerified: { type: Boolean, default: false },
     isActive: { type: Boolean, default: true },

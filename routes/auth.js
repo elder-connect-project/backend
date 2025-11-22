@@ -68,10 +68,14 @@ router.post("/send-otp", [body("phoneNumber").notEmpty()], async (req, res) => {
   // Create or find user
   let user = await User.findOne({ phoneNumber });
   if (!user) {
-    user = await User.create({ phoneNumber, firstName: "User" });
+    user = await User.create({ 
+      phoneNumber, 
+      firstName: "User"
+      // role field not included - user must select during registration
+    });
   }
 
-  // Generate OTP
+  // TEST MODE: Generate OTP for any phone number (SMS disabled for testing)
   const code = Math.floor(100000 + Math.random() * 900000).toString();
   const expiresAt = new Date(Date.now() + (parseInt(process.env.OTP_TTL_MS) || 5 * 60 * 1000));
 
@@ -85,6 +89,8 @@ router.post("/send-otp", [body("phoneNumber").notEmpty()], async (req, res) => {
   // Send OTP via SMS
   const message = `Your OTP code is ${code}. It expires in 5 minutes.`;
   
+  // TEMPORARY: Commented out for testing
+  /*
   try {
     await sendSms({ to: phoneNumber, message });
     
@@ -104,6 +110,15 @@ router.post("/send-otp", [body("phoneNumber").notEmpty()], async (req, res) => {
       error: process.env.NODE_ENV === 'development' ? smsError.message : undefined
     });
   }
+  */
+  
+  // TEST MODE: Return OTP in response for testing (any phone number works)
+  console.log('[OTP TEST MODE] OTP generated:', code, 'for phone:', phoneNumber);
+  return res.json({ 
+    message: "OTP sent successfully (test mode)",
+    devOTP: code, // Always return OTP in test mode for any phone number
+    phoneNumber: phoneNumber
+  });
 });
 
 /**
@@ -168,7 +183,7 @@ router.post(
       return res.status(400).json({ message: 'OTP expired. Please request a new OTP.' });
     }
     
-    // Verify OTP code
+    // Verify OTP code (normal verification - any phone number works)
     if (otpRecord.code !== otp) {
       otpRecord.attempts += 1;
       await otpRecord.save();
@@ -191,13 +206,24 @@ router.post(
     // OTP is valid - delete it
     await Otp.deleteOne({ _id: otpRecord._id });
     
-    // Update or create user
+    // Check if user exists in database using phoneNumber as primary key
     let user = await User.findOne({ phoneNumber });
     if (!user) {
-      user = await User.create({ phoneNumber, isVerified: true, firstName: 'User' });
-    } else if (!user.isVerified) {
-      user.isVerified = true;
-      await user.save();
+      // New phone number - create new user (no role field - will be null/undefined)
+      user = await User.create({ 
+        phoneNumber, 
+        isVerified: true, 
+        firstName: 'User'
+        // role field not included - user must select during registration
+      });
+      console.log('[NEW USER] Created user for phone:', phoneNumber, 'Role:', user.role || 'none');
+    } else {
+      // Existing phone number - update verification if needed
+      if (!user.isVerified) {
+        user.isVerified = true;
+        await user.save();
+      }
+      console.log('[EXISTING USER] Found user with phone:', phoneNumber, 'Role:', user.role || 'none');
     }
     
     // Generate tokens

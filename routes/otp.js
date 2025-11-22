@@ -62,6 +62,8 @@ router.post(
     if (!errors.isEmpty()) return res.status(400).json({ errors: errors.array() });
 
     const { phoneNumber } = req.body;
+    
+    // TEST MODE: Generate OTP for any phone number (SMS disabled for testing)
     const code = generateOtp();
     const expiresAt = new Date(Date.now() + (parseInt(process.env.OTP_TTL_MS) || 5 * 60 * 1000));
 
@@ -73,6 +75,8 @@ router.post(
 
     const message = `Your OTP code is ${code}. It expires in 5 minutes.`;
     
+    // TEMPORARY: Commented out for testing
+    /*
     try {
       await sendSms({ to: phoneNumber, message });
       return res.json({ message: 'OTP sent successfully' });
@@ -85,6 +89,15 @@ router.post(
         error: process.env.NODE_ENV === 'development' ? smsError.message : undefined
       });
     }
+    */
+    
+    // TEST MODE: Return OTP in response for testing (any phone number works)
+    console.log('[OTP TEST MODE] OTP generated:', code, 'for phone:', phoneNumber);
+    return res.json({ 
+      message: 'OTP sent successfully (test mode)',
+      devOTP: code, // Always return OTP in test mode for any phone number
+      phoneNumber: phoneNumber
+    });
   }
 );
 
@@ -131,9 +144,12 @@ router.post(
     if (!errors.isEmpty()) return res.status(400).json({ errors: errors.array() });
 
     const { phoneNumber, code } = req.body;
+    
     const record = await Otp.findOne({ phoneNumber });
     if (!record) return res.status(400).json({ message: 'OTP not found' });
     if (record.expiresAt < new Date()) return res.status(400).json({ message: 'OTP expired' });
+    
+    // Verify OTP code (normal verification - any phone number works)
     if (record.code !== code) {
       record.attempts += 1;
       await record.save();
@@ -144,7 +160,12 @@ router.post(
 
     let user = await User.findOne({ phoneNumber });
     if (!user) {
-      user = await User.create({ phoneNumber, isVerified: true, firstName: 'User' });
+      user = await User.create({ 
+        phoneNumber, 
+        isVerified: true, 
+        firstName: 'User'
+        // role field not included - user must select during registration
+      });
     } else if (!user.isVerified) {
       user.isVerified = true;
       await user.save();

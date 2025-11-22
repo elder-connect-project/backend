@@ -79,6 +79,9 @@ async function sendSms({ to, message }) {
     hasAuth: !!headers.Authorization || !!headers['x-api-key'],
   });
 
+  // TEMPORARY: Commented out for testing - SMS sending disabled
+  // TODO: Uncomment when ready to test actual SMS sending
+  /*
   try {
     const res = await axios.post(url, payload, { 
       headers, 
@@ -130,6 +133,11 @@ async function sendSms({ to, message }) {
       throw new Error(`SMS request failed: ${err.message}`);
     }
   }
+  */
+  
+  // TEST MODE: Return success without actually sending SMS
+  console.log('[SMS TEST MODE] SMS sending disabled - OTP would be:', message);
+  return { success: true, message: 'SMS sent (test mode)' };
 }
 
 module.exports = { sendSms };

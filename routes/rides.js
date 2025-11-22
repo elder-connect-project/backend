@@ -3,6 +3,7 @@ const { body, validationResult } = require('express-validator');
 const auth = require('../middleware/auth');
 const { requireRoles, requireRole } = require('../middleware/roleAuth');
 const Ride = require('../models/Ride');
+const Schedule = require('../models/Schedule');
 
 const router = express.Router();
 
@@ -157,6 +158,288 @@ router.post('/', auth, requireRoles(['elder', 'family']), [
   
   const ride = await Ride.create(req.body);
   return res.status(201).json({ ride });
+});
+
+/**
+ * @swagger
+ * /api/rides/{id}/accept:
+ *   put:
+ *     summary: Accept a ride (driver only)
+ *     tags:
+ *       - Rides
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Ride ID
+ *     responses:
+ *       200:
+ *         description: Ride accepted successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Ride'
+ *       403:
+ *         description: Forbidden - Only drivers can accept rides assigned to them
+ *       404:
+ *         description: Ride not found
+ *       400:
+ *         description: Ride cannot be accepted (already accepted/cancelled)
+ */
+router.put('/:id/accept', auth, requireRole('driver'), async (req, res) => {
+  try {
+    const ride = await Ride.findById(req.params.id);
+    
+    if (!ride) {
+      return res.status(404).json({ 
+        message: 'Ride not found',
+        error: 'The ride you are trying to accept does not exist'
+      });
+    }
+
+    // Check if the ride is assigned to this driver
+    if (ride.driverId.toString() !== req.user._id.toString()) {
+      return res.status(403).json({ 
+        message: 'Forbidden',
+        error: 'You can only accept rides assigned to you'
+      });
+    }
+
+    // Check if ride can be accepted (must be pending)
+    if (ride.status !== 'pending') {
+      return res.status(400).json({ 
+        message: 'Bad Request',
+        error: `Ride cannot be accepted. Current status: ${ride.status}`
+      });
+    }
+
+    // Update ride status to accepted
+    ride.status = 'accepted';
+    await ride.save();
+
+    // Update schedule status to confirmed when ride is accepted
+    try {
+      await Schedule.findByIdAndUpdate(ride.scheduleId, {
+        status: 'confirmed'
+      });
+    } catch (scheduleError) {
+      console.error('Error updating schedule status:', scheduleError);
+    }
+
+    return res.json({ 
+      message: 'Ride accepted successfully',
+      ride,
+      notifyFamily: true,
+      notificationMessage: `Driver ${req.user.firstName || 'Driver'} has accepted your ride request for ${ride.pickupLocation} to ${ride.dropLocation}.`
+    });
+  } catch (error) {
+    if (error.name === 'CastError') {
+      return res.status(400).json({ 
+        message: 'Invalid ride ID',
+        error: 'The provided ride ID is not valid'
+      });
+    }
+    return res.status(500).json({ 
+      message: 'Internal server error',
+      error: error.message 
+    });
+  }
+});
+
+/**
+ * @swagger
+ * /api/rides/{id}/decline:
+ *   put:
+ *     summary: Decline a ride (driver only)
+ *     tags:
+ *       - Rides
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Ride ID
+ *     responses:
+ *       200:
+ *         description: Ride declined successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Ride'
+ *       403:
+ *         description: Forbidden - Only drivers can decline rides assigned to them
+ *       404:
+ *         description: Ride not found
+ *       400:
+ *         description: Ride cannot be declined (already completed/cancelled)
+ */
+router.put('/:id/decline', auth, requireRole('driver'), async (req, res) => {
+  try {
+    const ride = await Ride.findById(req.params.id);
+    
+    if (!ride) {
+      return res.status(404).json({ 
+        message: 'Ride not found',
+        error: 'The ride you are trying to decline does not exist'
+      });
+    }
+
+    // Check if the ride is assigned to this driver
+    if (ride.driverId.toString() !== req.user._id.toString()) {
+      return res.status(403).json({ 
+        message: 'Forbidden',
+        error: 'You can only decline rides assigned to you'
+      });
+    }
+
+    // Check if ride can be declined (must be pending or accepted)
+    if (ride.status === 'completed') {
+      return res.status(400).json({ 
+        message: 'Bad Request',
+        error: 'Cannot decline a completed ride'
+      });
+    }
+
+    if (ride.status === 'cancelled') {
+      return res.status(400).json({ 
+        message: 'Bad Request',
+        error: 'Ride is already cancelled'
+      });
+    }
+
+    // Update ride status to cancelled
+    ride.status = 'cancelled';
+    await ride.save();
+
+    // Update schedule: set status back to pending and clear driver info so family can select another driver
+    try {
+      await Schedule.findByIdAndUpdate(ride.scheduleId, {
+        status: 'pending',
+        driverId: null,
+        driverName: null,
+        driverPhone: null
+      });
+    } catch (scheduleError) {
+      console.error('Error updating schedule status:', scheduleError);
+    }
+
+    return res.json({ 
+      message: 'Ride declined successfully',
+      ride,
+      notifyFamily: true,
+      notificationMessage: `Driver ${req.user.firstName || 'Driver'} has declined your ride request for ${ride.pickupLocation} to ${ride.dropLocation}. Please select another driver.`
+    });
+  } catch (error) {
+    if (error.name === 'CastError') {
+      return res.status(400).json({ 
+        message: 'Invalid ride ID',
+        error: 'The provided ride ID is not valid'
+      });
+    }
+    return res.status(500).json({ 
+      message: 'Internal server error',
+      error: error.message 
+    });
+  }
+});
+
+/**
+ * @swagger
+ * /api/rides/{id}/pickup:
+ *   put:
+ *     summary: Confirm pickup for a ride
+ *     tags:
+ *       - Rides
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - name: id
+ *         in: path
+ *         required: true
+ *         description: Ride ID
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: Pickup confirmed successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Ride'
+ *       403:
+ *         description: Forbidden - Only drivers can confirm pickup
+ *       404:
+ *         description: Ride not found
+ *       400:
+ *         description: Ride cannot be confirmed (wrong status)
+ */
+router.put('/:id/pickup', auth, requireRole('driver'), async (req, res) => {
+  try {
+    const ride = await Ride.findById(req.params.id);
+    
+    if (!ride) {
+      return res.status(404).json({ 
+        message: 'Ride not found',
+        error: 'The ride you are trying to confirm pickup for does not exist'
+      });
+    }
+
+    // Check if the ride is assigned to this driver
+    if (ride.driverId.toString() !== req.user._id.toString()) {
+      return res.status(403).json({ 
+        message: 'Forbidden',
+        error: 'You can only confirm pickup for rides assigned to you'
+      });
+    }
+
+    // Check if ride can be confirmed (must be accepted)
+    if (ride.status !== 'accepted') {
+      return res.status(400).json({ 
+        message: 'Bad Request',
+        error: `Cannot confirm pickup. Ride status must be 'accepted'. Current status: ${ride.status}`
+      });
+    }
+
+    // Update ride status to in_progress
+    ride.status = 'in_progress';
+    await ride.save();
+
+    // Update schedule status if needed
+    try {
+      await Schedule.findByIdAndUpdate(ride.scheduleId, {
+        status: 'confirmed'
+      });
+    } catch (scheduleError) {
+      console.error('Error updating schedule status:', scheduleError);
+    }
+
+    return res.json({ 
+      message: 'Pickup confirmed successfully',
+      ride,
+      notifyElder: true,
+      notifyFamily: true,
+      notificationMessage: `Driver ${req.user.firstName || 'Driver'} has confirmed pickup. You can now track the ride.`
+    });
+  } catch (error) {
+    console.error('Error confirming pickup:', error);
+    if (error.name === 'CastError') {
+      return res.status(400).json({ 
+        message: 'Invalid ride ID',
+        error: 'The provided ride ID is not valid'
+      });
+    }
+    return res.status(500).json({ 
+      message: 'Internal server error',
+      error: error.message 
+    });
+  }
 });
 
 module.exports = router;
