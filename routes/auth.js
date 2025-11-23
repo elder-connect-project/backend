@@ -75,7 +75,7 @@ router.post("/send-otp", [body("phoneNumber").notEmpty()], async (req, res) => {
     });
   }
 
-  // TEST MODE: Generate OTP for any phone number (SMS disabled for testing)
+  // Generate OTP
   const code = Math.floor(100000 + Math.random() * 900000).toString();
   const expiresAt = new Date(Date.now() + (parseInt(process.env.OTP_TTL_MS) || 5 * 60 * 1000));
 
@@ -89,8 +89,6 @@ router.post("/send-otp", [body("phoneNumber").notEmpty()], async (req, res) => {
   // Send OTP via SMS
   const message = `Your OTP code is ${code}. It expires in 5 minutes.`;
   
-  // TEMPORARY: Commented out for testing
-  /*
   try {
     await sendSms({ to: phoneNumber, message });
     
@@ -110,15 +108,6 @@ router.post("/send-otp", [body("phoneNumber").notEmpty()], async (req, res) => {
       error: process.env.NODE_ENV === 'development' ? smsError.message : undefined
     });
   }
-  */
-  
-  // TEST MODE: Return OTP in response for testing (any phone number works)
-  console.log('[OTP TEST MODE] OTP generated:', code, 'for phone:', phoneNumber);
-  return res.json({ 
-    message: "OTP sent successfully (test mode)",
-    devOTP: code, // Always return OTP in test mode for any phone number
-    phoneNumber: phoneNumber
-  });
 });
 
 /**

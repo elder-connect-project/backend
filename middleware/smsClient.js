@@ -8,15 +8,17 @@ async function sendSms({ to, message }) {
   if (!baseUrl || !apiKey || !userId) {
     const missing = [];
     if (!baseUrl) missing.push('https://smslenz.lk/api');
-    if (!apiKey) missing.push('c6f4fc94-c3bd-4172-a4f0-d78be2bacd16');
-    if (!userId) missing.push('916');
+    if (!apiKey) missing.push('7b3a7ee6-7a21-4aad-9cde-6d7270116c12');
+    if (!userId) missing.push('932');
     throw new Error(`SMS API config missing: ${missing.join(', ')}`);
   }
+
 
   // Validate phone number format (should start with +)
   if (!to || !to.startsWith('+')) {
     throw new Error('Invalid phone number format. Must include country code (e.g., +94XXXXXXXXX)');
   }
+  
 
   // SMSlenz.lk API format
   const provider = process.env.SMS_PROVIDER || 'smslenz';
@@ -30,7 +32,13 @@ async function sendSms({ to, message }) {
 
   if (provider === 'smslenz') {
     // SMSlenz.lk API format: POST with params in body
-    url = `${baseUrl.replace(/\/$/, '')}/api/send-sms`;
+    // Base URL should be like: https://smslenz.lk/api
+    // Endpoint: /send-sms (not /api/send-sms since base URL already has /api)
+    const cleanBaseUrl = baseUrl.replace(/\/$/, '');
+    url = cleanBaseUrl.endsWith('/api') 
+      ? `${cleanBaseUrl}/send-sms` 
+      : `${cleanBaseUrl}/api/send-sms`;
+    
     headers = {
       'Content-Type': 'application/json',
     };
