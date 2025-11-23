@@ -4,7 +4,7 @@ const { body, validationResult } = require("express-validator");
 const User = require("../models/User");
 const Otp = require("../models/Otp");
 const { sendSms } = require("../middleware/smsClient");
-const auth = require("../middleware/auth");
+const { auth } = require("../middleware");
 
 const router = express.Router();
 

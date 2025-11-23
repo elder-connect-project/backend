@@ -3,7 +3,7 @@ const { body, validationResult } = require('express-validator');
 const jwt = require('jsonwebtoken');
 const Otp = require('../models/Otp');
 const User = require('../models/User');
-const apiKeyAuth = require('../middleware/apiKeyAuth');
+const { apiKeyAuth } = require('../middleware');
 const { sendSms } = require('../middleware/smsClient');
 
 const router = express.Router();

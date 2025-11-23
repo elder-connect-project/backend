@@ -1,11 +1,23 @@
 const express = require('express');
 const { body, validationResult } = require('express-validator');
-const auth = require('../middleware/auth');
-const { requireRoles, requireRole } = require('../middleware/roleAuth');
+const rateLimit = require('express-rate-limit');
+const { auth, requireRoles, requireRole } = require('../middleware');
 const Ride = require('../models/Ride');
 const Schedule = require('../models/Schedule');
 
 const router = express.Router();
+
+// More lenient rate limiter for location updates (real-time tracking)
+// 10 seconds interval = 6 requests/minute = 90 requests/15 minutes
+// Setting to 120 to allow some buffer
+const locationUpdateLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 120, // Allows ~8 updates per minute (safe for 10-second intervals)
+  message: 'Too many location update requests, please try again later.',
+  standardHeaders: true,
+  legacyHeaders: false,
+  skipSuccessfulRequests: true, // Don't count successful requests towards limit
+});
 
 /**
  * @swagger
@@ -409,6 +421,17 @@ router.put('/:id/pickup', auth, requireRole('driver'), async (req, res) => {
 
     // Update ride status to in_progress
     ride.status = 'in_progress';
+    
+    // If driver location is provided, save it
+    if (req.body.latitude && req.body.longitude) {
+      ride.driverLocation = {
+        latitude: req.body.latitude,
+        longitude: req.body.longitude,
+        heading: req.body.heading || 0,
+        updatedAt: new Date(),
+      };
+    }
+    
     await ride.save();
 
     // Update schedule status if needed
@@ -429,6 +452,194 @@ router.put('/:id/pickup', auth, requireRole('driver'), async (req, res) => {
     });
   } catch (error) {
     console.error('Error confirming pickup:', error);
+    if (error.name === 'CastError') {
+      return res.status(400).json({ 
+        message: 'Invalid ride ID',
+        error: 'The provided ride ID is not valid'
+      });
+    }
+    return res.status(500).json({ 
+      message: 'Internal server error',
+      error: error.message 
+    });
+  }
+});
+
+/**
+ * @swagger
+ * /api/rides/{id}/complete:
+ *   put:
+ *     summary: Complete a ride (mark as dropped) (driver only)
+ *     tags:
+ *       - Rides
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Ride ID
+ *     responses:
+ *       200:
+ *         description: Ride completed successfully
+ *       403:
+ *         description: Forbidden - Only drivers can complete rides
+ *       404:
+ *         description: Ride not found
+ *       400:
+ *         description: Ride cannot be completed (must be in_progress)
+ */
+router.put('/:id/complete', auth, requireRole('driver'), async (req, res) => {
+  try {
+    const ride = await Ride.findById(req.params.id);
+    
+    if (!ride) {
+      return res.status(404).json({ 
+        message: 'Ride not found',
+        error: 'The ride you are trying to complete does not exist'
+      });
+    }
+
+    // Check if the ride is assigned to this driver
+    if (ride.driverId.toString() !== req.user._id.toString()) {
+      return res.status(403).json({ 
+        message: 'Forbidden',
+        error: 'You can only complete rides assigned to you'
+      });
+    }
+
+    // Check if ride can be completed (must be in_progress)
+    if (ride.status !== 'in_progress') {
+      return res.status(400).json({ 
+        message: 'Bad Request',
+        error: `Cannot complete ride. Ride status must be 'in_progress'. Current status: ${ride.status}`
+      });
+    }
+
+    // Update ride status to completed
+    ride.status = 'completed';
+    await ride.save();
+
+    // Update schedule: mark as completed and clear driver assignment so new schedules can be assigned
+    try {
+      await Schedule.findByIdAndUpdate(ride.scheduleId, {
+        status: 'completed',
+        driverId: null,
+        driverName: null,
+        driverPhone: null
+      });
+    } catch (scheduleError) {
+      console.error('Error updating schedule status:', scheduleError);
+    }
+
+    return res.json({ 
+      message: 'Ride completed successfully. Drop confirmed!',
+      ride,
+      notifyElder: true,
+      notifyFamily: true,
+      notificationMessage: `Driver ${req.user.firstName || 'Driver'} has completed the ride and confirmed drop at ${ride.dropLocation}.`
+    });
+  } catch (error) {
+    console.error('Error completing ride:', error);
+    if (error.name === 'CastError') {
+      return res.status(400).json({ 
+        message: 'Invalid ride ID',
+        error: 'The provided ride ID is not valid'
+      });
+    }
+    return res.status(500).json({ 
+      message: 'Internal server error',
+      error: error.message 
+    });
+  }
+});
+
+/**
+ * @swagger
+ * /api/rides/{id}/location:
+ *   put:
+ *     summary: Update driver location during ride (driver only)
+ *     tags:
+ *       - Rides
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - name: id
+ *         in: path
+ *         required: true
+ *         description: Ride ID
+ *         schema:
+ *           type: string
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - latitude
+ *               - longitude
+ *             properties:
+ *               latitude:
+ *                 type: number
+ *               longitude:
+ *                 type: number
+ *               heading:
+ *                 type: number
+ *                 description: Direction in degrees (0-360)
+ *     responses:
+ *       200:
+ *         description: Location updated successfully
+ *       403:
+ *         description: Forbidden - Only drivers can update location
+ *       404:
+ *         description: Ride not found
+ */
+router.put('/:id/location', auth, requireRole('driver'), locationUpdateLimiter, async (req, res) => {
+  try {
+    const ride = await Ride.findById(req.params.id);
+    
+    if (!ride) {
+      return res.status(404).json({ 
+        message: 'Ride not found',
+        error: 'The ride does not exist'
+      });
+    }
+
+    // Check if the ride is assigned to this driver
+    if (ride.driverId.toString() !== req.user._id.toString()) {
+      return res.status(403).json({ 
+        message: 'Forbidden',
+        error: 'You can only update location for your own rides'
+      });
+    }
+
+    // Check if ride is in progress
+    if (ride.status !== 'in_progress') {
+      return res.status(400).json({ 
+        message: 'Bad Request',
+        error: `Cannot update location. Ride must be in progress. Current status: ${ride.status}`
+      });
+    }
+
+    // Update driver location
+    ride.driverLocation = {
+      latitude: req.body.latitude,
+      longitude: req.body.longitude,
+      heading: req.body.heading || 0,
+      updatedAt: new Date(),
+    };
+    
+    await ride.save();
+
+    return res.json({ 
+      message: 'Location updated successfully',
+      ride
+    });
+  } catch (error) {
+    console.error('Error updating driver location:', error);
     if (error.name === 'CastError') {
       return res.status(400).json({ 
         message: 'Invalid ride ID',

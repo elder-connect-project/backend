@@ -1,7 +1,6 @@
 const express = require('express');
 const { body, validationResult } = require('express-validator');
-const auth = require('../middleware/auth');
-const { requireRoles } = require('../middleware/roleAuth');
+const { auth, requireRoles } = require('../middleware');
 const Schedule = require('../models/Schedule');
 const FamilyMember = require('../models/FamilyMember');
 const Ride = require('../models/Ride');

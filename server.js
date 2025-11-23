@@ -27,10 +27,17 @@ app.use(xss());
 // =========================
 // Rate Limiting
 // =========================
+// Rate Limiting
 const limiter = rateLimit({
   windowMs: parseInt(process.env.RATE_LIMIT_WINDOW_MS) || 15 * 60 * 1000, // 15 minutes
-  max: parseInt(process.env.RATE_LIMIT_MAX_REQUESTS) || 100,
-  message: 'Too many requests from this IP, please try again later.'
+  max: parseInt(process.env.RATE_LIMIT_MAX_REQUESTS) || 150, // Increased from 100 to 150
+  message: 'Too many requests from this IP, please try again later.',
+  skip: (req) => {
+    // Skip general rate limiting for location update endpoints (handled separately in route)
+    return req.path.includes('/location') && req.method === 'PUT';
+  },
+  standardHeaders: true,
+  legacyHeaders: false,
 });
 app.use('/api/', limiter);
 
@@ -77,7 +84,6 @@ app.use('/api/contacts', require('./routes/contacts'));
 app.use('/api/emergency', require('./routes/emergency'));
 app.use('/api/notifications', require('./routes/notifications'));
 app.use('/api/location', require('./routes/location'));
-// app.use('/api/settings', require('./routes/settings'));
 
 // =========================
 // Swagger / Redoc Setup

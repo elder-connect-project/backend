@@ -30,6 +30,12 @@ const rideSchema = new mongoose.Schema(
       enum: ["pending", "accepted", "in_progress", "completed", "cancelled"],
       default: "pending",
     },
+    driverLocation: {
+      latitude: { type: Number },
+      longitude: { type: Number },
+      heading: { type: Number }, // Direction in degrees (0-360)
+      updatedAt: { type: Date },
+    },
   },
   { timestamps: true }
 );

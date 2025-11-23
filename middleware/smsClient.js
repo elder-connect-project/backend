@@ -79,32 +79,25 @@ async function sendSms({ to, message }) {
     hasAuth: !!headers.Authorization || !!headers['x-api-key'],
   });
 
-  // TEMPORARY: Commented out for testing - SMS sending disabled
-  // TODO: Uncomment when ready to test actual SMS sending
-  /*
   try {
     const res = await axios.post(url, payload, { 
       headers, 
       timeout: parseInt(process.env.SMS_TIMEOUT_MS) || 10000,
-      validateStatus: (status) => status < 500, // Don't throw on 4xx
+      validateStatus: (status) => status < 500,
     });
     
-    // Log response
     console.log('[SMS RESPONSE]', {
       status: res.status,
       data: res.data,
     });
 
-    // Check if response indicates success
     if (res.status >= 200 && res.status < 300) {
       return res.data;
     } else {
-      // 4xx errors - provider rejected the request
       const errorMsg = res.data?.message || res.data?.error || `HTTP ${res.status}`;
       throw new Error(`SMS provider rejected request: ${errorMsg}`);
     }
   } catch (err) {
-    // Network errors or 5xx errors
     if (err.response) {
       const status = err.response.status;
       const data = err.response.data;
@@ -117,7 +110,6 @@ async function sendSms({ to, message }) {
       });
       throw new Error(`SMS send failed (${status}): ${errorMsg}`);
     } else if (err.request) {
-      // Request was made but no response received
       console.error('[SMS ERROR]', {
         url,
         error: 'No response from SMS provider',
@@ -125,7 +117,6 @@ async function sendSms({ to, message }) {
       });
       throw new Error(`SMS provider unreachable: ${err.message}`);
     } else {
-      // Error setting up request
       console.error('[SMS ERROR]', {
         url,
         error: err.message,
@@ -133,11 +124,6 @@ async function sendSms({ to, message }) {
       throw new Error(`SMS request failed: ${err.message}`);
     }
   }
-  */
-  
-  // TEST MODE: Return success without actually sending SMS
-  console.log('[SMS TEST MODE] SMS sending disabled - OTP would be:', message);
-  return { success: true, message: 'SMS sent (test mode)' };
 }
 
 module.exports = { sendSms };
