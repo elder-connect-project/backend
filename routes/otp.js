@@ -13,7 +13,7 @@ function generateOtp() {
 }
 
 function signAccessToken(id) {
-  return jwt.sign({ sub: id }, process.env.JWT_SECRET || 'dev_secret', { expiresIn: '7d' });
+  return jwt.sign({ sub: id }, process.env.JWT_SECRET || 'dev_secret', { expiresIn: '30d' });
 }
 
 function signRefreshToken(id) {

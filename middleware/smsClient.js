@@ -8,8 +8,8 @@ async function sendSms({ to, message }) {
   if (!baseUrl || !apiKey || !userId) {
     const missing = [];
     if (!baseUrl) missing.push('https://smslenz.lk/api');
-    if (!apiKey) missing.push('7b3a7ee6-7a21-4aad-9cde-6d7270116c12');
-    if (!userId) missing.push('932');
+    if (!apiKey) missing.push('3524d94a-a29e-4bb9-9230-74451cb504f4');
+    if (!userId) missing.push('942');
     throw new Error(`SMS API config missing: ${missing.join(', ')}`);
   }
 

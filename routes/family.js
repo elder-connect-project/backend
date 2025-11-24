@@ -115,16 +115,29 @@ router.get('/', auth, requireRoles(['elder', 'family']), async (req, res) => {
  *         description: Validation error
  */
 router.post('/', auth, requireRoles(['elder', 'family']), [
-  body('elderId').notEmpty(),
   body('name').notEmpty(),
   body('phone').notEmpty(),
-  body('relation').notEmpty()
+  body('relation').notEmpty(),
+  body('elderId').custom((value, { req }) => {
+    const relation = (req.body.relation || '').toString().trim().toLowerCase();
+    if (relation === 'elder') {
+      return true;
+    }
+    if (!value) {
+      throw new Error('elderId is required');
+    }
+    return true;
+  })
 ], async (req, res) => {
   const errors = validationResult(req);
   if (!errors.isEmpty()) return res.status(400).json({ errors: errors.array() });
   
   // If user is elder, they can only add family members for themselves
-  if (req.user.role === 'elder' && req.body.elderId !== req.user._id.toString()) {
+  if (
+    req.user.role === 'elder' &&
+    req.body.relation?.toLowerCase() !== 'elder' &&
+    req.body.elderId !== req.user._id.toString()
+  ) {
     return res.status(403).json({ 
       message: 'Forbidden',
       error: 'Elders can only add family members for themselves'
@@ -132,19 +145,60 @@ router.post('/', auth, requireRoles(['elder', 'family']), [
   }
   
   const normalizedPhone = req.body.phone.trim();
+  const relation = (req.body.relation || '').toString().trim().toLowerCase();
+  let elderId = req.body.elderId;
+  let createdOrLinkedElder = null;
+
+  if (relation === 'elder') {
+    let elderUser = await User.findOne({ phoneNumber: normalizedPhone });
+    if (!elderUser) {
+      elderUser = await User.create({
+        phoneNumber: normalizedPhone,
+        firstName: req.body.name || 'Elder',
+        role: 'elder',
+        isVerified: false,
+      });
+    } else if (elderUser.role !== 'elder') {
+      elderUser.role = 'elder';
+      await elderUser.save();
+    }
+
+    elderId = elderUser._id.toString();
+    createdOrLinkedElder = elderUser;
+
+    if (req.user.role === 'family') {
+      await User.findByIdAndUpdate(req.user._id, { elderId });
+    }
+
+    req.body.elderId = elderId;
+  } else if (!elderId) {
+    return res.status(400).json({ message: 'elderId is required' });
+  }
+
   const member = await FamilyMember.create({
     ...req.body,
+    elderId,
     phone: normalizedPhone,
     addedBy: req.user._id,
   });
 
-  const linkedUser = await User.findOne({ phoneNumber: normalizedPhone }).lean();
+  const linkedUser =
+    createdOrLinkedElder ||
+    (await User.findOne({ phoneNumber: normalizedPhone }).lean());
   if (linkedUser) {
     member.linkedUserId = linkedUser._id;
     await member.save();
   }
 
-  return res.status(201).json({ member });
+  return res.status(201).json({
+    member,
+    elderUser: createdOrLinkedElder
+      ? {
+          _id: createdOrLinkedElder._id.toString(),
+          phoneNumber: createdOrLinkedElder.phoneNumber,
+        }
+      : undefined,
+  });
 });
 
 module.exports = router;

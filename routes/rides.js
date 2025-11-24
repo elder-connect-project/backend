@@ -4,6 +4,8 @@ const rateLimit = require('express-rate-limit');
 const { auth, requireRoles, requireRole } = require('../middleware');
 const Ride = require('../models/Ride');
 const Schedule = require('../models/Schedule');
+const User = require('../models/User');
+const { sendSms } = require('../middleware/smsClient');
 
 const router = express.Router();
 
@@ -443,6 +445,46 @@ router.put('/:id/pickup', auth, requireRole('driver'), async (req, res) => {
       console.error('Error updating schedule status:', scheduleError);
     }
 
+    // Send SMS notifications to elder and family member
+    try {
+      const [elder, family] = await Promise.all([
+        User.findById(ride.elderId).lean(),
+        User.findById(ride.familyId).lean()
+      ]);
+
+      const driverName = req.user.firstName || 'Driver';
+      const pickupMessage = `🚗 Pickup Confirmed!\n\nDriver ${driverName} has confirmed pickup. You can now track the ride in real-time through the app.`;
+
+      // Send to elder
+      if (elder && elder.phoneNumber) {
+        try {
+          await sendSms({ 
+            to: elder.phoneNumber, 
+            message: pickupMessage 
+          });
+          console.log(`Pickup SMS sent to elder: ${elder.phoneNumber}`);
+        } catch (elderSmsError) {
+          console.error('Error sending SMS to elder:', elderSmsError);
+        }
+      }
+
+      // Send to family member
+      if (family && family.phoneNumber && family.phoneNumber !== elder?.phoneNumber) {
+        try {
+          await sendSms({ 
+            to: family.phoneNumber, 
+            message: pickupMessage 
+          });
+          console.log(`Pickup SMS sent to family: ${family.phoneNumber}`);
+        } catch (familySmsError) {
+          console.error('Error sending SMS to family:', familySmsError);
+        }
+      }
+    } catch (notificationError) {
+      console.error('Error sending pickup notifications:', notificationError);
+      // Don't fail the request if SMS fails
+    }
+
     return res.json({ 
       message: 'Pickup confirmed successfully',
       ride,
@@ -532,6 +574,46 @@ router.put('/:id/complete', auth, requireRole('driver'), async (req, res) => {
       });
     } catch (scheduleError) {
       console.error('Error updating schedule status:', scheduleError);
+    }
+
+    // Send SMS notifications to elder and family member
+    try {
+      const [elder, family] = await Promise.all([
+        User.findById(ride.elderId).lean(),
+        User.findById(ride.familyId).lean()
+      ]);
+
+      const driverName = req.user.firstName || 'Driver';
+      const dropMessage = `✅ Drop Confirmed!\n\nDriver ${driverName} has completed the ride and confirmed drop at ${ride.dropLocation || 'destination'}. Thank you for using ElderConnect!`;
+
+      // Send to elder
+      if (elder && elder.phoneNumber) {
+        try {
+          await sendSms({ 
+            to: elder.phoneNumber, 
+            message: dropMessage 
+          });
+          console.log(`Drop SMS sent to elder: ${elder.phoneNumber}`);
+        } catch (elderSmsError) {
+          console.error('Error sending SMS to elder:', elderSmsError);
+        }
+      }
+
+      // Send to family member
+      if (family && family.phoneNumber && family.phoneNumber !== elder?.phoneNumber) {
+        try {
+          await sendSms({ 
+            to: family.phoneNumber, 
+            message: dropMessage 
+          });
+          console.log(`Drop SMS sent to family: ${family.phoneNumber}`);
+        } catch (familySmsError) {
+          console.error('Error sending SMS to family:', familySmsError);
+        }
+      }
+    } catch (notificationError) {
+      console.error('Error sending drop notifications:', notificationError);
+      // Don't fail the request if SMS fails
     }
 
     return res.json({ 

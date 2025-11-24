@@ -10,7 +10,7 @@ const router = express.Router();
 
 const signAccessToken = (id) =>
   jwt.sign({ sub: id }, process.env.JWT_SECRET || "dev_secret", {
-    expiresIn: "7d",
+    expiresIn: "30d",
   });
 const signRefreshToken = (id) =>
   jwt.sign(
